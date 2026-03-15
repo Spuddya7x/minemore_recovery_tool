@@ -1,0 +1,22 @@
+{
+  "name": "minemore-recovery-cli",
+  "version": "1.0.0",
+  "description": "Standalone CLI tool for recovering funds from MineMore Evore subaccounts",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "minemore-recover": "src/index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "recover": "node src/index.js"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0"
+  },
+  "license": "MIT"
+}
