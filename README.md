@@ -91,7 +91,7 @@ Once your accounts are loaded, you'll see an interactive menu:
 
 ## How It Works
 
-MineMore uses the a smart contract (https://solscan.io/account/8jaLKWLJAj5jVCZbxpe3zRUvLB3LD48MRtaQ2AjfCfxa) on Solana to manage mining subaccounts. Each subaccount consists of:
+MineMore uses a smart contract (https://solscan.io/account/8jaLKWLJAj5jVCZbxpe3zRUvLB3LD48MRtaQ2AjfCfxa) on Solana to manage mining subaccounts. Each subaccount consists of:
 
 1. **Manager account** — stores your wallet as the `authority` (owner)
 2. **ManagedMinerAuth PDA** — holds your autodeploy SOL balance
