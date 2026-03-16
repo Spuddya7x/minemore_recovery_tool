@@ -91,14 +91,14 @@ Once your accounts are loaded, you'll see an interactive menu:
 
 ## How It Works
 
-MineMore uses the [Evore program](https://solscan.io/account/8jaLKWLJAj5jVCZbxpe3zRUvLB3LD48MRtaQ2AjfCfxa) on Solana to manage mining subaccounts. Each subaccount consists of:
+MineMore uses the a smart contract (https://solscan.io/account/8jaLKWLJAj5jVCZbxpe3zRUvLB3LD48MRtaQ2AjfCfxa) on Solana to manage mining subaccounts. Each subaccount consists of:
 
 1. **Manager account** — stores your wallet as the `authority` (owner)
 2. **ManagedMinerAuth PDA** — holds your autodeploy SOL balance
 3. **ORE Miner PDA** — holds your mining rewards (SOL & ORE)
 
 This tool:
-1. Scans the Evore program on-chain for all Manager accounts where **you** are the authority
+1. Scans the smart contract on-chain for all Manager accounts where **you** are the authority
 2. Derives the associated PDA addresses
 3. Fetches balances from each PDA
 4. Builds and signs recovery transactions locally using your private key

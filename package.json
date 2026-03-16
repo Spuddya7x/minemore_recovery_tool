@@ -1,7 +1,7 @@
 {
   "name": "minemore-recovery-cli",
   "version": "1.0.0",
-  "description": "Standalone CLI tool for recovering funds from MineMore Evore subaccounts",
+  "description": "Standalone CLI tool for recovering funds from MineMore Smart Contract subaccounts",
   "type": "module",
   "main": "src/index.js",
   "bin": {
