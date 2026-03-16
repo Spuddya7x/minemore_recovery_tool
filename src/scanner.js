@@ -1,6 +1,6 @@
 import { EVORE_PROGRAM_ID } from './constants.js';
-import { getManagedMinerAuthPda, getOreMinerPda, getOreBoardPda, getDeployerPda } from './pda.js';
-import { decodeManager, decodeOreMiner, decodeOreBoard } from './accounts.js';
+import { getManagedMinerAuthPda, getOreMinerPda, getOreBoardPda, getOreTreasuryPda, getDeployerPda } from './pda.js';
+import { decodeManager, decodeOreMiner, decodeOreBoard, decodeOreTreasury, inferRefinedOre } from './accounts.js';
 
 /** Delay between RPC calls to avoid rate limits on free endpoints */
 const REQUEST_DELAY_MS = 400;
@@ -43,13 +43,21 @@ export async function scanForSubaccounts(rpc, walletPubkey, includeLegacy = fals
     ? [0n, 1n, 2n, 3n, 4n, 5n, 6n, 7n, 8n, 9n]
     : [0n];
 
-  // Step 3: Fetch OreBoard to get current round
+  // Step 3: Fetch OreBoard + Treasury for current round and rewards factor
   const [oreBoardPda] = getOreBoardPda();
-  const oreBoardInfo = await rpc.call(conn => conn.getAccountInfo(oreBoardPda));
+  const [oreTreasuryPda] = getOreTreasuryPda();
+  const [oreBoardInfo, oreTreasuryInfo] = await rpc.call(conn =>
+    conn.getMultipleAccountsInfo([oreBoardPda, oreTreasuryPda])
+  );
   let currentRound = 0n;
   if (oreBoardInfo) {
     const board = decodeOreBoard(oreBoardInfo.data);
     currentRound = board.roundId;
+  }
+  let treasuryMinerRewardsFactor = null;
+  if (oreTreasuryInfo) {
+    const treasury = decodeOreTreasury(oreTreasuryInfo.data);
+    treasuryMinerRewardsFactor = treasury.minerRewardsFactor;
   }
 
   // Step 4: For each manager × authId, derive PDAs and batch fetch
@@ -81,13 +89,8 @@ export async function scanForSubaccounts(rpc, walletPubkey, includeLegacy = fals
       const mmaInfo = accountInfos[0];
       const minerInfo = accountInfos[1];
 
-      // Skip if MMA doesn't exist (this authId is unused)
-      if (!mmaInfo) {
-        continue;
-      }
-
-      // Full MMA balance — MMClaimSOL drains the entire account (no rent reserved)
-      const mmaLamports = BigInt(mmaInfo.lamports);
+      // MMA may be drained (null) after claiming SOL, but miner can still have ORE
+      const mmaLamports = mmaInfo ? BigInt(mmaInfo.lamports) : 0n;
 
       // Decode miner if it exists
       let minerData = null;
@@ -96,6 +99,28 @@ export async function scanForSubaccounts(rpc, walletPubkey, includeLegacy = fals
       if (minerInfo && minerInfo.data.length >= 544) {
         minerData = decodeOreMiner(minerInfo.data);
         hasUncheckpointed = minerData.roundId > 0n && minerData.roundId < currentRound;
+      }
+
+      // Infer true refined ORE using treasury rewards factor
+      let refinedOre = minerData ? minerData.refinedOre : 0n;
+      if (minerData && treasuryMinerRewardsFactor !== null) {
+        try {
+          refinedOre = inferRefinedOre(
+            minerData.rewardsFactor,
+            treasuryMinerRewardsFactor,
+            minerData.rewardsOre,
+            minerData.refinedOre
+          );
+        } catch {
+          // Fallback to stale on-chain value
+        }
+      }
+
+      // Skip accounts with nothing claimable
+      const hasClaimable = mmaLamports > 0n ||
+        (minerData && (minerData.rewardsSol > 0n || minerData.rewardsOre > 0n));
+      if (!hasClaimable) {
+        continue;
       }
 
       subaccounts.push({
@@ -107,7 +132,7 @@ export async function scanForSubaccounts(rpc, walletPubkey, includeLegacy = fals
         mmaLamports,
         rewardsSol: minerData ? minerData.rewardsSol : 0n,
         rewardsOre: minerData ? minerData.rewardsOre : 0n,
-        refinedOre: minerData ? minerData.refinedOre : 0n,
+        refinedOre,
         minerRoundId: minerData ? minerData.roundId : 0n,
         currentRound,
         hasUncheckpointed,

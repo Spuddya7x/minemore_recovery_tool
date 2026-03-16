@@ -5,6 +5,8 @@ import {
   mmClaimOreInstruction,
 } from './instructions.js';
 import { formatSol, formatOre } from './accounts.js';
+import { getOreTokenAddress } from './pda.js';
+import { ATA_RENT } from './constants.js';
 
 /**
  * Build, sign, send, and confirm a versioned transaction.
@@ -109,8 +111,42 @@ export async function claimSol(rpc, keypair, account) {
   return sendAndConfirm(rpc, keypair, instructions, 'Claim SOL');
 }
 
+// =============================================================================
+// ORE ATA Rent Check
+// =============================================================================
+
 /**
- * Claim ORE token rewards from a subaccount
+ * Checks if the signer has an existing ORE token account (ATA).
+ * If not, verifies wallet has enough SOL to cover ATA rent (~0.00204 SOL).
+ * Returns true if safe to proceed, false if insufficient SOL.
+ */
+async function hasOreAtaOrSufficientRent(rpc, signerPubkey) {
+  const ataAddress = getOreTokenAddress(signerPubkey);
+  const ataInfo = await rpc.call(conn => conn.getAccountInfo(ataAddress));
+
+  if (ataInfo !== null) {
+    return true; // ATA already exists, no rent needed
+  }
+
+  // ATA doesn't exist — check wallet can cover rent
+  const balance = await rpc.call(conn => conn.getBalance(signerPubkey));
+  if (BigInt(balance) < ATA_RENT) {
+    console.log(`  WARNING: No ORE token account exists. Creating one requires ~0.00204 SOL rent.`);
+    console.log(`  Wallet balance: ${formatSol(BigInt(balance))} SOL — insufficient for ATA rent.`);
+    return false;
+  }
+
+  console.log(`  Note: ORE token account will be created (~0.00204 SOL rent from wallet).`);
+  return true;
+}
+
+// =============================================================================
+// Claim ORE
+// =============================================================================
+
+/**
+ * Claim ORE token rewards from a subaccount.
+ * Checks ATA rent before proceeding.
  */
 export async function claimOre(rpc, keypair, account) {
   const { managerPubkey, authId, rewardsOre, minerExists } = account;
@@ -125,6 +161,13 @@ export async function claimOre(rpc, keypair, account) {
     return null;
   }
 
+  // Ensure wallet can cover ATA rent if token account doesn't exist yet
+  const canClaim = await hasOreAtaOrSufficientRent(rpc, keypair.publicKey);
+  if (!canClaim) {
+    console.log('  Skipping ORE claim — claim SOL first to fund token account rent.');
+    return null;
+  }
+
   const instructions = [
     mmClaimOreInstruction(keypair.publicKey, managerPubkey, authId),
   ];
@@ -133,28 +176,29 @@ export async function claimOre(rpc, keypair, account) {
   return sendAndConfirm(rpc, keypair, instructions, 'Claim ORE');
 }
 
+// =============================================================================
+// Empty Account — claim SOL first, then ORE from a single subaccount
+// =============================================================================
+
 /**
- * Recover ALL funds from a single subaccount:
- * 1. Checkpoint (if needed) + Claim SOL (drains entire MMA + ore_miner rewards)
- * 2. Claim ORE
- *
- * Note: No separate withdraw step needed — MMClaimSOL drains the entire
- * ManagedMinerAuth account (autodeploy balance + rent), not just rewards.
+ * Empty a single subaccount by claiming SOL first (to fund ATA rent), then ORE.
+ * Returns array of { type, signature } for each successful claim.
  */
-export async function recoverAll(rpc, keypair, account) {
+export async function emptyAccount(rpc, keypair, account) {
   const results = [];
 
-  // Step 1: Claim all SOL (checkpoint if needed + drain entire MMA)
+  // Step 1: Claim SOL first (funds wallet for potential ATA rent)
   if (account.rewardsSol > 0n || account.hasUncheckpointed || account.mmaLamports > 0n) {
     const sig = await claimSol(rpc, keypair, account);
     if (sig) results.push({ type: 'Claim SOL', signature: sig });
   }
 
-  // Step 2: Claim ORE
-  if (account.rewardsOre > 0n) {
+  // Step 2: Claim ORE (rent check happens inside claimOre)
+  if (account.rewardsOre > 0n && account.minerExists) {
     const sig = await claimOre(rpc, keypair, account);
     if (sig) results.push({ type: 'Claim ORE', signature: sig });
   }
 
   return results;
 }
+

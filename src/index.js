@@ -24,8 +24,8 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { loadKeypairFromBase58 } from './wallet.js';
 import { scanForSubaccounts } from './scanner.js';
-import { claimSol, claimOre, recoverAll } from './transactions.js';
-import { shortenPubkey, formatSol, formatOre } from './accounts.js';
+import { claimSol, claimOre, emptyAccount } from './transactions.js';
+import { shortenPubkey, formatSol, formatOre, formatAccountSummary } from './accounts.js';
 import { displayWelcome, displayAccounts, displayMenu } from './display.js';
 import { RpcManager } from './rpc.js';
 
@@ -192,7 +192,7 @@ async function selectAccount(rl, accounts, prompt) {
 
   console.log('');
   for (let i = 0; i < accounts.length; i++) {
-    console.log(`  [${i + 1}] ${shortenPubkey(accounts[i].managedMinerAuth)}`);
+    console.log(`  [${i + 1}] ${shortenPubkey(accounts[i].managedMinerAuth)}  ${formatAccountSummary(accounts[i])}`);
   }
   console.log(`  [a] All accounts`);
   console.log('');
@@ -220,6 +220,30 @@ async function selectAccount(rl, accounts, prompt) {
 async function confirm(rl, message) {
   const answer = await rl.question(`${message} (y/n): `);
   return answer.trim().toLowerCase() === 'y';
+}
+
+/**
+ * If any of the given accounts have unrefined ORE, display the 10% tax
+ * warning and require the user to type "I Accept" to proceed.
+ * Returns true if no unrefined ORE or user accepted, false if declined.
+ */
+async function acceptUnrefinedOreTax(rl, accountsToCheck) {
+  const list = Array.isArray(accountsToCheck) ? accountsToCheck : [accountsToCheck];
+  let totalUnrefined = 0n;
+  for (const a of list) {
+    totalUnrefined += a.rewardsOre;
+  }
+  if (totalUnrefined === 0n) return true;
+
+  const tax = totalUnrefined / 10n;
+  const net = totalUnrefined - tax;
+  console.log('');
+  console.log(`  WARNING: ${formatOre(totalUnrefined)} unrefined ORE will incur a 10% tax.`);
+  console.log(`    Tax:         -${formatOre(tax)} ORE`);
+  console.log(`    You receive:  ${formatOre(net)} ORE (unrefined portion)`);
+  console.log('');
+  const answer = await rl.question('  Type "I Accept" to proceed: ');
+  return answer.trim().toLowerCase() === 'i accept';
 }
 
 // =============================================================================
@@ -340,6 +364,7 @@ async function main() {
 
           if (selected === 'all') {
             if (!(await confirm(menuRl, 'Claim ORE from all accounts?'))) break;
+            if (!(await acceptUnrefinedOreTax(menuRl, accounts))) break;
             for (const account of accounts) {
               console.log(`\n  Account: ${shortenPubkey(account.managedMinerAuth)}`);
               try {
@@ -350,6 +375,7 @@ async function main() {
             }
           } else {
             if (!(await confirm(menuRl, `Claim ORE from ${shortenPubkey(selected.managedMinerAuth)}?`))) break;
+            if (!(await acceptUnrefinedOreTax(menuRl, selected))) break;
             try {
               await claimOre(rpc, keypair, selected);
             } catch (err) {
@@ -361,6 +387,49 @@ async function main() {
         }
 
         case '4': {
+          // Empty Account
+          const selected = await selectAccount(menuRl, accounts, 'Select account to empty');
+          if (!selected) break;
+
+          if (selected === 'all') {
+            if (!(await confirm(menuRl, 'Empty all accounts (claim SOL + ORE)?'))) break;
+            if (!(await acceptUnrefinedOreTax(menuRl, accounts))) break;
+            for (const account of accounts) {
+              console.log(`\n  Account: ${shortenPubkey(account.managedMinerAuth)}`);
+              try {
+                const results = await emptyAccount(rpc, keypair, account);
+                if (results.length === 0) {
+                  console.log('  Nothing to claim from this account.');
+                } else {
+                  for (const r of results) {
+                    console.log(`  ${r.type}: ${r.signature}`);
+                  }
+                }
+              } catch (err) {
+                console.error(`  Error: ${err.message}`);
+              }
+            }
+          } else {
+            if (!(await confirm(menuRl, `Empty account ${shortenPubkey(selected.managedMinerAuth)}? (claim SOL + ORE)`))) break;
+            if (!(await acceptUnrefinedOreTax(menuRl, selected))) break;
+            try {
+              const results = await emptyAccount(rpc, keypair, selected);
+              if (results.length === 0) {
+                console.log('  Nothing to claim from this account.');
+              } else {
+                for (const r of results) {
+                  console.log(`  ${r.type}: ${r.signature}`);
+                }
+              }
+            } catch (err) {
+              console.error(`  Error: ${err.message}`);
+            }
+          }
+          console.log('');
+          break;
+        }
+
+        case '5': {
           // RECOVER ALL
           console.log('');
           console.log('  RECOVER ALL will:');
@@ -370,13 +439,14 @@ async function main() {
           console.log('');
 
           if (!(await confirm(menuRl, 'Proceed with full recovery?'))) break;
+          if (!(await acceptUnrefinedOreTax(menuRl, accounts))) break;
 
           for (let i = 0; i < accounts.length; i++) {
             const account = accounts[i];
             console.log(`\n  === Account #${i + 1}: ${shortenPubkey(account.managedMinerAuth)} ===`);
 
             try {
-              const results = await recoverAll(rpc, keypair, account);
+              const results = await emptyAccount(rpc, keypair, account);
               if (results.length === 0) {
                 console.log('  Nothing to recover from this account.');
               } else {

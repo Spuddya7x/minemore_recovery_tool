@@ -35,9 +35,12 @@ export function displayAccounts(accounts) {
 
     if (a.minerExists) {
       console.log(`      Pending SOL Rewards:    ${padLeft(formatSol(a.rewardsSol), 14)} SOL`);
-      console.log(`      Pending ORE Rewards:    ${padLeft(formatOre(a.rewardsOre), 14)} ORE`);
+      console.log(`      Unrefined ORE:          ${padLeft(formatOre(a.rewardsOre), 14)} ORE  (10% tax on claim)`);
+      console.log(`      Refined ORE:            ${padLeft(formatOre(a.refinedOre), 14)} ORE`);
       const totalSol = a.mmaLamports + a.rewardsSol;
       console.log(`      Total SOL Recoverable:  ${padLeft(formatSol(totalSol), 14)} SOL`);
+      const netOre = a.refinedOre + (a.rewardsOre * 9n / 10n);
+      console.log(`      Net ORE Claimable:      ${padLeft(formatOre(netOre), 14)} ORE`);
       if (a.hasUncheckpointed) {
         console.log(`      Needs checkpoint:       Yes (round #${a.minerRoundId})`);
       }
@@ -55,19 +58,25 @@ export function displayTotals(accounts) {
   let totalMma = 0n;
   let totalSolRewards = 0n;
   let totalOre = 0n;
+  let totalRefinedOre = 0n;
 
   for (const a of accounts) {
     totalMma += a.mmaLamports;
     totalSolRewards += a.rewardsSol;
     totalOre += a.rewardsOre;
+    totalRefinedOre += a.refinedOre;
   }
 
   const totalSol = totalMma + totalSolRewards;
 
+  const netOre = totalRefinedOre + (totalOre * 9n / 10n);
+
   console.log('  ------------------------------------------------');
   console.log(`  TOTAL RECOVERABLE:`);
-  console.log(`    SOL:  ${formatSol(totalSol)} SOL  (${formatSol(totalMma)} autodeploy + ${formatSol(totalSolRewards)} rewards)`);
-  console.log(`    ORE:  ${formatOre(totalOre)} ORE`);
+  console.log(`    SOL:            ${formatSol(totalSol)} SOL  (${formatSol(totalMma)} autodeploy + ${formatSol(totalSolRewards)} rewards)`);
+  console.log(`    Unrefined ORE:  ${formatOre(totalOre)} ORE  (10% tax on claim)`);
+  console.log(`    Refined ORE:    ${formatOre(totalRefinedOre)} ORE`);
+  console.log(`    Net ORE:        ${formatOre(netOre)} ORE  (after tax)`);
   console.log('  ------------------------------------------------');
   console.log('');
 }
@@ -76,7 +85,8 @@ export function displayMenu() {
   console.log('  [1] Refresh balances');
   console.log('  [2] Claim all SOL (rewards + autodeploy balance)');
   console.log('  [3] Claim ORE rewards');
-  console.log('  [4] RECOVER ALL (claim SOL + ORE from all accounts)');
+  console.log('  [4] Empty Account (claim SOL + ORE from one account)');
+  console.log('  [5] RECOVER ALL (empty all accounts)');
   console.log('  [0] Exit');
   console.log('');
 }

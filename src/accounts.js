@@ -1,6 +1,17 @@
 import { PublicKey } from '@solana/web3.js';
 import { LAMPORTS_PER_SOL, ORE_DECIMALS } from './constants.js';
 
+const I80F48_PRECISION = 2n ** 48n;
+
+/**
+ * Read a 16-byte I80F48 (Numeric) value as a raw bigint
+ */
+function readNumeric(buffer, offset) {
+  const low = buffer.readBigUInt64LE(offset);
+  const high = buffer.readBigUInt64LE(offset + 8);
+  return (high << 64n) | low;
+}
+
 // =============================================================================
 // Account Types & Decoders
 // =============================================================================
@@ -75,7 +86,7 @@ export function decodeOreMiner(data) {
   const lastClaimOreAt = buffer.readBigInt64LE(offset); offset += 8;
   const lastClaimSolAt = buffer.readBigInt64LE(offset); offset += 8;
 
-  // rewards_factor: I80F48 (16 bytes) — skip for display purposes
+  const rewardsFactor = readNumeric(buffer, offset);
   offset += 16;
 
   const rewardsSol = buffer.readBigUInt64LE(offset); offset += 8;
@@ -94,6 +105,7 @@ export function decodeOreMiner(data) {
     checkpointId,
     lastClaimOreAt,
     lastClaimSolAt,
+    rewardsFactor,
     rewardsSol,
     rewardsOre,
     refinedOre,
@@ -102,6 +114,45 @@ export function decodeOreMiner(data) {
     lifetimeRewardsOre,
     lifetimeDeployed,
   };
+}
+
+// =============================================================================
+// ORE Treasury Decoder
+// =============================================================================
+
+/**
+ * Decodes the ORE Treasury account to extract miner_rewards_factor
+ *
+ * Treasury layout (after 8-byte discriminator):
+ *   balance: u64 (8), buffer_a: u64 (8), motherlode: u64 (8),
+ *   miner_rewards_factor: Numeric/I80F48 (16), ...
+ */
+export function decodeOreTreasury(data) {
+  const buffer = Buffer.from(data);
+  // Skip discriminator (8) + balance (8) + buffer_a (8) + motherlode (8) = offset 32
+  const minerRewardsFactor = readNumeric(buffer, 32);
+  return { minerRewardsFactor };
+}
+
+// =============================================================================
+// Refined ORE Inference
+// =============================================================================
+
+/**
+ * Infer the true refined ORE balance without requiring a checkpoint.
+ *
+ * Formula (from ORE program):
+ *   delta = treasury.miner_rewards_factor - miner.rewards_factor
+ *   accrued = (delta * miner.rewards_ore) / 2^48
+ *   true_refined_ore = miner.refined_ore + accrued
+ */
+export function inferRefinedOre(minerRewardsFactor, treasuryMinerRewardsFactor, rewardsOre, refinedOre) {
+  const delta = treasuryMinerRewardsFactor - minerRewardsFactor;
+  if (delta < 0n) {
+    return refinedOre;
+  }
+  const accrued = (delta * rewardsOre) / I80F48_PRECISION;
+  return refinedOre + accrued;
 }
 
 // =============================================================================
@@ -116,6 +167,12 @@ export function formatSol(lamports, decimals = 6) {
 export function formatOre(amount, decimals = 4) {
   const ore = Number(amount) / ORE_DECIMALS;
   return ore.toFixed(decimals);
+}
+
+export function formatAccountSummary(account) {
+  const totalSol = account.mmaLamports + account.rewardsSol;
+  const totalOre = account.rewardsOre + account.refinedOre;
+  return `(${formatSol(totalSol)} SOL + ${formatOre(totalOre)} ORE)`;
 }
 
 export function shortenPubkey(pubkey, chars = 4) {

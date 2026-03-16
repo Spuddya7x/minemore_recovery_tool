@@ -16,7 +16,7 @@ export const DEPLOYER_SEED = 'deployer';
 // =============================================================================
 
 export const ORE_PROGRAM_ID = new PublicKey('oreV3EG1i9BEgiAJ8b177Z2S2rMarzak4NMv1kULvWv');
-export const ORE_MINT_ADDRESS = new PublicKey('oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhxyK9jSybcp');
+export const ORE_MINT_ADDRESS = new PublicKey('oreoU2P8bN6jkk3jbaiVxYnG1dCXcYxwhwyK9jSybcp');
 export const ORE_TREASURY_ADDRESS = new PublicKey('45db2FSR4mcXdSVVZbKbwojU6uYDpMyhpEi7cC8nHaWG');
 
 // ORE PDA seeds
@@ -61,6 +61,9 @@ export const EvoreInstruction = {
 
 /** Rent-exempt minimum for ManagedMinerAuth PDA (lamports) */
 export const MMA_RENT = 890880n;
+
+/** Rent-exempt minimum for a token account ATA (lamports) */
+export const ATA_RENT = 2_039_280n;
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 export const ORE_DECIMALS = 100_000_000_000; // 11 decimals
